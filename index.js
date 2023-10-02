@@ -26,7 +26,7 @@ bot.hears(/hi/i, (ctx) => {ctx.reply('Hi to you too')})
 bot.hears(/[A-Z]+/i, async (ctx) =>{ 
     console.log(ctx.message.text);
     const key = ctx.message.text;
-    await getDataFromServer(dataFromServer.length == 0);// || dateFromServer != todayDate);
+    await getDataFromServer(dataFromServer.length == 0);
     ctx.reply(`data :>> ${dataFromServer[key]}`);
 });
     

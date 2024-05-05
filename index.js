@@ -1,126 +1,169 @@
-const { Telegraf, Markup, Extra } = require('telegraf');
+const path = require('path');
+const { Telegraf, Markup } = require('telegraf');
 const fetch = require('node-fetch');
 require('dotenv').config();
 
-const { BOT_TOKEN } = process.env;
+const { BOT_TOKEN, API_KEY } = process.env;
 const bot = new Telegraf(BOT_TOKEN);
 
-const api_teams = "https://www.balldontlie.io/api/v1/teams";
-const api_players = 'https://www.balldontlie.io/api/v1/players'; // це тобі на майбутнє, цей ендпоінт поверне всіх гравців
+console.log(API_KEY); // Должен вывести ваш API ключ
+
+const api_teams = "https://api.balldontlie.io/v1/teams";
+const api_players = "https://api.balldontlie.io/v1/players"; // Исправлен URL для запроса информации о игроках
 
 let dataFromServer = [];
+let currentPlayers = [];
+let currentPlayerIndex = 0;
+let expectingPlayerName = false; // Добавляем состояние для отслеживания ввода имени игрока
 
-function getDataFromServer(forceFetch = false, api) {
-  if (!forceFetch) {
-      return;
-  }
+async function getDataFromServer(forceFetch = false, apiURL = api_teams) {
+    if (!forceFetch && dataFromServer.length > 0) {
+        return;
+    }
 
-  return fetch(api, 
-  {
-      method: 'GET', 
-      headers: {'Content-Type': 'application/json'}
-  })
-  .then(response => response.json())
-  .then(data => {
-      dataFromServer = data.data;
-      console.log(dataFromServer);
-  })   
+    return fetch(apiURL, {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': API_KEY
+        },
+    })
+    .then((response) => {
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.json();
+    })
+    .then((data) => {
+        dataFromServer = data.data;
+        console.log(dataFromServer);
+    })
+    .catch((error) => {
+        console.error('Failed to fetch data:', error);
+    });
 }
 
-
-bot.start(ctx => {
-  ctx.replyWithHTML("Welcome to my bot", Markup.inlineKeyboard([
-    Markup.button.callback('Всі команди', 'allTeams'),
-    Markup.button.callback('Button 2', 'button2'), //тут зроби "всі гравці"
-    Markup.button.callback('Button 3', 'button3'), // тут зроби "пошук гравця"
-  ]))
+bot.start((ctx) => {
+    ctx.replyWithHTML("Вітаю!", Markup.inlineKeyboard([
+        Markup.button.callback('Всі команди', 'allTeams'),
+        Markup.button.callback('Пошук гравця', 'searchPlayer'),
+    ]));
 });
-
-
-bot.hears(/hi/i, (ctx) => {ctx.reply('Hi to you too')})
 
 let currentIndex = 0;
-let sentMessageId = null;
-
 async function sendTeamInfo(ctx) {
-  const team = dataFromServer[currentIndex];
-
-  const message = `
-    <b>${team.full_name}</b>
-    City: ${team.city}
+    const team = dataFromServer[currentIndex];
+    const message = `
+        <b>${team.full_name}</b>
+        Abbreviation: ${team.abbreviation}
+        City: ${team.city}
+        Division: ${team.division}
     `;
-//тут всі поля виведи
 
-  await ctx.telegram.editMessageCaption(
-      ctx.chat.id,
-      sentMessageId,
-      null,
-      message,
-      { parse_mode: 'HTML', ...Markup.inlineKeyboard([
-        [{ text: 'Попередня команда', callback_data: 'previous' }],
-        [{ text: 'Наступна команда', callback_data: 'next' }],
-      ])}
-  );
+    const imagePath = path.join(__dirname, 'images', `${team.id}.png`);
+    try {
+        const imageBuffer = require('fs').readFileSync(imagePath);
+        await ctx.telegram.sendPhoto(
+            ctx.chat.id,
+            { source: imageBuffer },
+            {
+                caption: message,
+                parse_mode: 'HTML',
+                ...Markup.inlineKeyboard([
+                    Markup.button.callback('Попередня команда', 'previous'),
+                    Markup.button.callback('Наступна команда', 'next'),
+                    Markup.button.callback('Початкове меню', 'mainMenu'),
+                ]),
+            }
+        );
+    } catch (error) {
+        console.error('Error sending team info:', error);
+        ctx.reply('Error sending team information.');
+    }
 }
 
 bot.action('previous', (ctx) => {
-  currentIndex = (currentIndex - 1 + dataFromServer.length) % dataFromServer.length;
-  sendTeamInfo(ctx);
+    currentIndex = (currentIndex - 1 + dataFromServer.length) % dataFromServer.length;
+    sendTeamInfo(ctx);
 });
 
 bot.action('next', (ctx) => {
-  currentIndex = (currentIndex + 1) % dataFromServer.length;
-  sendTeamInfo(ctx);
+    currentIndex = (currentIndex + 1) % dataFromServer.length;
+    sendTeamInfo(ctx);
 });
 
-//це зараз працює і красиво показує команди
 bot.action('allTeams', async (ctx) => {
-  await getDataFromServer(dataFromServer.length == 0, api_teams);
-  const team = dataFromServer[currentIndex];
+    await getDataFromServer(dataFromServer.length === 0);
+    sendTeamInfo(ctx);
+});
 
-  const message = `
-    <b>${team.full_name}</b>
-    City: ${team.city}
+bot.action('searchPlayer', (ctx) => {
+    ctx.reply('Ведіть ім\'я та прізвище гравця (e.g., LeBron James):');
+    expectingPlayerName = true; // Устанавливаем состояние ожидания ввода имени игрока
+});
 
-    `;
-//тут всі поля виведи
+bot.on('text', async (ctx) => {
+    if (expectingPlayerName) {
+        const playerName = ctx.message.text.trim();
+        const names = playerName.split(" "); // Разделение введенного текста на слова
 
-    const sentMessage = await ctx.replyWithPhoto({ url: 'https://robohash.org/1' }, {
-        caption: message,
-        parse_mode: 'HTML',
-        reply_markup: {
-            inline_keyboard: [
-                [{ text: 'Попередня команда', callback_data: 'previous' }],
-                [{ text: 'Наступна команда', callback_data: 'next' }],
-            ],
-        },
+        if (names.length === 2) {
+            const [first_name, last_name] = names;
+            await searchPlayer(first_name, last_name, ctx);
+        } else {
+            ctx.reply('Не правильне ім\'я гравця. Будь ласка, введіть ім\'я та прізвище (наприклад, LeBron James).');
+        }
+    }
+});
+
+async function searchPlayer(first_name, last_name, ctx) {
+    const url = `${api_players}?first_name=${encodeURIComponent(first_name)}&last_name=${encodeURIComponent(last_name)}`;
+    const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': API_KEY
+        }
     });
 
-    // Store the sent message ID
-    sentMessageId = sentMessage.message_id;
+    if (!response.ok) {
+        const responseBody = await response.text();
+        console.log('Response body:', responseBody); // Вывод тела ответа для диагностики
+        ctx.reply(`HTTP error! Status: ${response.status}`);
+        return;
+    }
 
+    const data = await response.json();
+    currentPlayers = data.data;
+    if (currentPlayers.length === 0) {
+        ctx.reply(`Не знайдено гравців за іменем ${first_name} ${last_name}. Введіть інше ім'я:`, Markup.inlineKeyboard([
+            Markup.button.callback('Завершити пошук', 'mainMenu')
+        ]));
+    } else {
+        currentPlayerIndex = 0;
+        sendPlayerInfo(ctx, currentPlayers[currentPlayerIndex]);
+    }
+}
+
+async function sendPlayerInfo(ctx, player) {
+    const message = `
+        <b>${player.first_name} ${player.last_name}</b>
+        Position: ${player.position}
+        Team: ${player.team.full_name}
+    `;
+    await ctx.replyWithHTML(message, Markup.inlineKeyboard([
+        Markup.button.callback('Завершити пошук', 'mainMenu')
+    ]));
+}
+
+bot.action('mainMenu', (ctx) => {
+    expectingPlayerName = false; // Resetting the flag
+    ctx.replyWithHTML("Вітаємо знову!", Markup.inlineKeyboard([
+        Markup.button.callback('Всі команди', 'allTeams'),
+        Markup.button.callback('Пошук гравця', 'searchPlayer'),
+    ]));
 });
-
-bot.action('previous', (ctx) => {
-  currentIndex = (currentIndex - 1 + data.length) % data.length;
-  sendPlayerInfo(ctx);
-});
-
-bot.action('next', (ctx) => {
-  currentIndex = (currentIndex + 1) % data.length;
-  sendPlayerInfo(ctx);
-});
-
-
-// це нижче тобі заготовки
-bot.action('button2', (ctx) => {
-  ctx.reply('You clicked Button 2!');
-});
-
-bot.action('button3', (ctx) => {
-  ctx.reply('You clicked Button 3!');
-});
-
-
 
 bot.launch();
+
+

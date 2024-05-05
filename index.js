@@ -1,7 +1,5 @@
 const path = require('path');
 const { Telegraf, Markup } = require('telegraf');
-const path = require('path');
-const { Telegraf, Markup } = require('telegraf');
 const fetch = require('node-fetch');
 require('dotenv').config();
 

@@ -47,6 +47,7 @@ bot.start((ctx) => {
     ctx.replyWithHTML("Вітаю!", Markup.inlineKeyboard([
         Markup.button.callback('Всі команди', 'allTeams'),
         Markup.button.callback('Пошук гравця', 'searchPlayer'),
+        Markup.button.url('Перейти на сайт', 'https://yam0r.github.io/BasketStat/index.html') // Используем Markup.button.url
     ]));
 });
 
@@ -161,9 +162,8 @@ bot.action('mainMenu', (ctx) => {
     ctx.replyWithHTML("Вітаємо знову!", Markup.inlineKeyboard([
         Markup.button.callback('Всі команди', 'allTeams'),
         Markup.button.callback('Пошук гравця', 'searchPlayer'),
+        Markup.button.url('Перейти на сайт', 'https://yam0r.github.io/BasketStat/index.html') // Используем Markup.button.url
     ]));
 });
 
 bot.launch();
-
-
